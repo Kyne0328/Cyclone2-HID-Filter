@@ -17,12 +17,16 @@ So the effective minimum install target is Windows 10 version 1903 / build 18362
 
 Use the GitHub Actions workflow or build locally with Visual Studio + WDK/EWDK.
 
-Expected package files after a successful build:
+Expected package files after a successful GitHub Actions build:
 
 - `Cyclone2DpadFilter.sys`
 - `Cyclone2DpadFilter.inf`
 - `Cyclone2DpadFilter.cat`
+- `Cyclone2DpadFilter-TestCert.cer`
+- `Cyclone2DpadFilter-TestCert-Thumbprint.txt`
 - optional `Cyclone2DpadFilter.pdb`
+
+The workflow creates a temporary self-signed test code-signing certificate, signs the catalog file, verifies the signature, and exports the public certificate into the artifact.
 
 ## Before install
 
@@ -33,6 +37,8 @@ HID\VID_XXXX&PID_YYYY
 ```
 
 with the actual Cyclone 2 HID hardware ID from Device Manager.
+
+After editing the INF, rebuild. Do not edit the INF inside a built artifact, because that invalidates the catalog signature.
 
 The default D-pad report settings are still guesses until the real controller HID report layout is known:
 
@@ -45,18 +51,26 @@ The default D-pad report settings are still guesses until the real controller HI
 
 This is a kernel driver. Test only on a machine where you can recover through Safe Mode, Device Manager, or driver removal.
 
-For test-signed packages, Windows test-signing may be required:
+Because the GitHub Actions package is test-signed, enable Windows test-signing from an elevated Command Prompt:
 
 ```cmd
 bcdedit /set testsigning on
 shutdown /r /t 0
 ```
 
-Install from an elevated command prompt in the package folder:
+After reboot, import the exported test certificate into the local machine Trusted Root store:
+
+```cmd
+certutil -addstore -f Root Cyclone2DpadFilter-TestCert.cer
+```
+
+Then install from an elevated Command Prompt in the artifact folder:
 
 ```cmd
 pnputil /add-driver Cyclone2DpadFilter.inf /install
 ```
+
+Unplug and replug the controller, or disable and re-enable it in Device Manager.
 
 ## Uninstall
 
@@ -70,6 +84,19 @@ Then remove it:
 
 ```cmd
 pnputil /delete-driver oemXX.inf /uninstall /force
+```
+
+Remove the test certificate if you no longer need it:
+
+```cmd
+certutil -delstore Root "Cyclone2DpadFilter Test Certificate"
+```
+
+Turn off test-signing:
+
+```cmd
+bcdedit /set testsigning off
+shutdown /r /t 0
 ```
 
 Reboot afterward.

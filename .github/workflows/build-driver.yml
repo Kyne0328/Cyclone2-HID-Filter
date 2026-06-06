@@ -27,7 +27,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # The EWDK ISO is ~5 GB. Cache it so reruns and the second matrix job
+      # The EWDK ISO is about 5 GB. Cache it so reruns and the second matrix job
       # skip the download.
       - name: Cache EWDK ISO
         id: ewdk-cache
@@ -46,8 +46,8 @@ jobs:
           # Windows 11 25H2 EWDK (build 26100) with Visual Studio Build Tools
           # 17.14.0, matching the windows-2022 runner. Self-contained: SDK, WDK,
           # build tools, and driver MSBuild targets, so no VS / WDK VSIX setup is
-          # needed. Use curl.exe rather than Invoke-WebRequest, which is orders
-          # of magnitude slower on multi-GB files. fwlink from the EWDK page.
+          # needed. Use curl.exe rather than Invoke-WebRequest, which is much
+          # slower on multi-GB files. fwlink from the EWDK page.
           Write-Host "Downloading EWDK ISO..."
           curl.exe -L --fail --retry 3 --retry-delay 5 -o "$iso" "https://go.microsoft.com/fwlink/?linkid=2335681"
           if ($LASTEXITCODE -ne 0) {
@@ -69,24 +69,15 @@ jobs:
           "EWDK_DRIVE=$drive" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "EWDK mounted at ${drive}:"
 
-      - name: Build driver
+      - name: Build, catalog, and test-sign driver package
         shell: cmd
         timeout-minutes: 30
         run: |
-          rem Set up the EWDK build environment IN-PROCESS. LaunchBuildEnv.cmd
-          rem just runs "%comspec% /k BuildEnv\SetupBuildEnv.cmd", i.e. it
-          rem configures the env inside a spawned child shell, so that env would
-          rem be lost to later commands. Call SetupBuildEnv.cmd directly so the
-          rem full VS/MSVC/WDK env (PATH incl. msbuild, VSINSTALLDIR,
-          rem VCToolsInstallDir, VCTargetsPath, ...) persists for the build.
+          rem Set up the EWDK build environment in this cmd.exe process.
           call "%EWDK_DRIVE%:\BuildEnv\SetupBuildEnv.cmd"
           if errorlevel 1 ( echo SetupBuildEnv failed & exit /b 1 )
 
-          rem The vcxproj uses WindowsTargetPlatformVersion=10.0, which normal VS
-          rem resolves to the full SDK version via the registry. The EWDK is not
-          rem registry-installed, so it stays literal "10.0" and the kernel-mode
-          rem include path (Include\<ver>\km, where ntddk.h lives) is wrong.
-          rem Pass the EWDK's real SDK version (Version_Number) explicitly.
+          rem The EWDK is not registry-installed, so pass its real SDK version.
           echo Version_Number=%Version_Number%
           set "WINSDKVER=%Version_Number%"
           if not defined WINSDKVER (
@@ -96,11 +87,8 @@ jobs:
             exit /b 1
           )
 
-          rem Build the driver only. The WDK auto-packaging copies the .inf into
-          rem a package subfolder but not the .sys (a known limitation of a lone
-          rem driver project without a companion Package project), which makes
-          rem the built-in inf2cat/signability fail. Disable signing and the
-          rem built-in inf2cat here; we assemble the package and catalog below.
+          rem Build the driver binary. We generate the package catalog manually
+          rem below, then test-sign that catalog.
           msbuild "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /p:WindowsTargetPlatformVersion=%WINSDKVER% /p:SignMode=Off /p:EnableInf2Cat=false /v:minimal
           set "RC=%ERRORLEVEL%"
 
@@ -109,8 +97,8 @@ jobs:
 
           if not "%RC%"=="0" ( echo msbuild failed with %RC% & exit /b %RC% )
 
-          rem Assemble a clean package dir with just the inf + sys so inf2cat
-          rem finds the binary next to the inf, then generate the catalog.
+          rem Assemble a clean package dir with just the files that belong in
+          rem the install package. inf2cat hashes everything in this directory.
           set "OUT=%GITHUB_WORKSPACE%\x64\${{ matrix.configuration }}"
           set "PKG=%GITHUB_WORKSPACE%\package"
           if exist "%PKG%" rmdir /s /q "%PKG%"
@@ -122,10 +110,28 @@ jobs:
           if not exist "%INF2CAT%" set "INF2CAT=inf2cat.exe"
           echo Using INF2CAT=%INF2CAT%
           "%INF2CAT%" /driver:"%PKG%" /os:10_19H1_X64
-          if errorlevel 1 echo (warning) inf2cat did not produce a catalog; shipping .sys and .inf only
+          if errorlevel 1 ( echo inf2cat failed & exit /b 1 )
 
-          rem Copy symbols after cataloging so they are not part of the package.
-          copy /y "%OUT%\Cyclone2DpadFilter.pdb" "%PKG%\" >nul
+          rem Create a temporary self-signed test certificate, sign the catalog,
+          rem and export the public certificate so the target PC can trust it.
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Cyclone2DpadFilter Test Certificate' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(3); Export-Certificate -Cert $cert -FilePath '%PKG%\Cyclone2DpadFilter-TestCert.cer' | Out-Null; Set-Content -Path '%PKG%\Cyclone2DpadFilter-TestCert-Thumbprint.txt' -Value $cert.Thumbprint"
+          if errorlevel 1 ( echo certificate creation failed & exit /b 1 )
+
+          for /f "usebackq delims=" %%T in ("%PKG%\Cyclone2DpadFilter-TestCert-Thumbprint.txt") do set "CERT_THUMBPRINT=%%T"
+          if not defined CERT_THUMBPRINT ( echo certificate thumbprint missing & exit /b 1 )
+
+          set "SIGNTOOL=%EWDK_DRIVE%:\Program Files\Windows Kits\10\bin\%WINSDKVER%\x64\signtool.exe"
+          if not exist "%SIGNTOOL%" set "SIGNTOOL=signtool.exe"
+          echo Using SIGNTOOL=%SIGNTOOL%
+          "%SIGNTOOL%" sign /fd SHA256 /sha1 %CERT_THUMBPRINT% "%PKG%\Cyclone2DpadFilter.cat"
+          if errorlevel 1 ( echo signtool sign failed & exit /b 1 )
+
+          "%SIGNTOOL%" verify /v /pa "%PKG%\Cyclone2DpadFilter.cat"
+          if errorlevel 1 ( echo signtool verify failed & exit /b 1 )
+
+          rem Copy symbols after cataloging/signing so they are not part of the
+          rem signed driver package catalog.
+          if exist "%OUT%\Cyclone2DpadFilter.pdb" copy /y "%OUT%\Cyclone2DpadFilter.pdb" "%PKG%\" >nul
 
           echo === Package dir ===
           dir /b "%PKG%"
@@ -134,12 +140,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Cyclone2DpadFilter-${{ matrix.configuration }}-${{ matrix.platform }}
-          # Build output dir is <project>\x64\<Configuration>\. Targeting it
-          # avoids picking up the source .inf at the repo root, and
-          # if-no-files-found:error fails the job if the build produced nothing.
           path: |
             package\*.sys
             package\*.inf
             package\*.cat
+            package\*.cer
+            package\*.txt
             package\*.pdb
           if-no-files-found: error
