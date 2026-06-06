@@ -97,10 +97,12 @@ jobs:
           )
 
           msbuild "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /p:WindowsTargetPlatformVersion=%WINSDKVER% /v:minimal
-          if errorlevel 1 ( echo msbuild failed & exit /b 1 )
+          set "RC=%ERRORLEVEL%"
 
-          echo === Build output ===
-          dir /s /b "%GITHUB_WORKSPACE%\x64"
+          echo === Build output tree (x64) ===
+          dir /s /b "%GITHUB_WORKSPACE%\x64" 2>nul
+
+          if not "%RC%"=="0" ( echo msbuild failed with %RC% & exit /b %RC% )
 
       - name: Upload build output
         uses: actions/upload-artifact@v4
