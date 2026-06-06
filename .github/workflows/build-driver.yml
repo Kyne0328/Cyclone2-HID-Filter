@@ -69,54 +69,27 @@ jobs:
           "EWDK_DRIVE=$drive" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "EWDK mounted at ${drive}:"
 
-      - name: Build driver
+      # DIAGNOSTIC ONLY: reveal how the EWDK sets up its environment so the
+      # build can call the in-process setup script(s) directly, instead of
+      # LaunchBuildEnv.cmd which configures the env inside a spawned child shell
+      # (env is then lost to later commands). Remove once the build is fixed.
+      - name: Inspect EWDK environment setup
         shell: cmd
-        timeout-minutes: 30
         run: |
-          rem LaunchBuildEnv.cmd sets up the build environment and returns; it
-          rem does not accept a build command as an argument. Set up the env,
-          rem then run msbuild as a separate command in the same cmd session.
-          call "%EWDK_DRIVE%:\LaunchBuildEnv.cmd"
-
-          rem The EWDK dev prompt does not put msbuild on PATH or set
-          rem VSINSTALLDIR. Resolve MSBuild from the EWDK's Build Tools install,
-          rem falling back to a search restricted to the Visual Studio dir (a
-          rem search over all of Program Files matches a bogus NETFXSDK stub).
-          set "MSBUILD="
-          set "VSROOT=%EWDK_DRIVE%:\Program Files\Microsoft Visual Studio\2022\BuildTools"
-          if exist "%VSROOT%\MSBuild\Current\Bin\amd64\MSBuild.exe" set "MSBUILD=%VSROOT%\MSBuild\Current\Bin\amd64\MSBuild.exe"
-          if not defined MSBUILD if exist "%VSROOT%\MSBuild\Current\Bin\MSBuild.exe" set "MSBUILD=%VSROOT%\MSBuild\Current\Bin\MSBuild.exe"
-          if not defined MSBUILD (
-            echo MSBuild not at expected path, searching under Visual Studio dir...
-            for /r "%EWDK_DRIVE%:\Program Files\Microsoft Visual Studio" %%f in (MSBuild.exe) do set "MSBUILD=%%f"
-          )
-          if not defined MSBUILD (
-            echo Could not locate MSBuild.exe under the EWDK.
-            dir /b "%EWDK_DRIVE%:\Program Files\Microsoft Visual Studio\2022"
-            exit /b 1
-          )
-          echo Using MSBUILD=%MSBUILD%
-
-          rem The EWDK leaves VCTargetsPath without its drive/prefix (it derives
-          rem from the unset VSINSTALLDIR), so the Microsoft.Cpp imports fail.
-          rem Point it at the EWDK's VC targets directory via the environment.
-          rem MSBuild reads VCTargetsPath from the env; passing it as a /p: arg
-          rem breaks because the trailing backslash escapes the closing quote.
-          set "VCTargetsPath=%VSROOT%\MSBuild\Microsoft\VC\v170\"
-          echo VCTargetsPath=%VCTargetsPath%
-          if not exist "%VCTargetsPath%Microsoft.Cpp.Default.props" (
-            echo VCTargetsPath invalid: %VCTargetsPath%
-            dir /b "%VSROOT%\MSBuild\Microsoft\VC"
-            exit /b 1
-          )
-
-          "%MSBUILD%" "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /v:minimal
-          if errorlevel 1 (
-            echo msbuild failed
-            exit /b 1
-          )
-          echo === Build output ===
-          dir /s /b "%GITHUB_WORKSPACE%\x64"
+          echo ===== ISO ROOT =====
+          dir /b "%EWDK_DRIVE%:\"
+          echo.
+          echo ===== *.cmd in ISO ROOT =====
+          dir /b "%EWDK_DRIVE%:\*.cmd"
+          echo.
+          echo ===== BuildEnv folder =====
+          dir /b "%EWDK_DRIVE%:\BuildEnv" 2>nul
+          echo.
+          echo ===== LaunchBuildEnv.cmd CONTENTS =====
+          type "%EWDK_DRIVE%:\LaunchBuildEnv.cmd"
+          echo.
+          echo ===== END =====
+          exit /b 1
 
       - name: Upload build output
         uses: actions/upload-artifact@v4
