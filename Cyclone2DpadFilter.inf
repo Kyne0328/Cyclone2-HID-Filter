@@ -1,15 +1,15 @@
 [Version]
 Signature="$WINDOWS NT$"
-Class=HIDClass
-ClassGuid={745a17a0-74d3-11d0-b6fe-00a0c90f57da}
+; Extension INF: this driver is an upper filter that adds itself to a device
+; owned by the in-box HID function driver. It does not own the device, so it is
+; installed as an extension rather than a primary device driver.
+Class=Extension
+ClassGuid={e2f84ce7-8efa-411c-aa69-97454ca4cb57}
+ExtensionId={2f8a1c6e-7b3d-4e92-a5f0-1d9c8b7a6e54}
 Provider=%ProviderName%
 CatalogFile=Cyclone2DpadFilter.cat
 DriverVer=06/06/2026,0.1.0.0
 PnpLockdown=1
-
-[DestinationDirs]
-DefaultDestDir=12
-Cyclone2DpadFilter_CopyFiles=12
 
 [Manufacturer]
 %ManufacturerName%=Standard,NTamd64
@@ -17,6 +17,16 @@ Cyclone2DpadFilter_CopyFiles=12
 [Standard.NTamd64]
 ; Replace this placeholder with the Cyclone 2 HID hardware ID from Device Manager.
 %Cyclone2DeviceDesc%=Cyclone2DpadFilter_Install,HID\VID_XXXX&PID_YYYY
+
+[SourceDisksNames]
+1=%DiskName%,,,
+
+[SourceDisksFiles]
+Cyclone2DpadFilter.sys=1
+
+[DestinationDirs]
+; Universal/extension drivers run from the driver store (dirid 13).
+Cyclone2DpadFilter_CopyFiles=13
 
 [Cyclone2DpadFilter_Install.NT]
 CopyFiles=Cyclone2DpadFilter_CopyFiles
@@ -44,13 +54,7 @@ DisplayName=%ServiceName%
 ServiceType=1
 StartType=3
 ErrorControl=1
-ServiceBinary=%12%\Cyclone2DpadFilter.sys
-
-[SourceDisksNames]
-1=%DiskName%,,,
-
-[SourceDisksFiles]
-Cyclone2DpadFilter.sys=1
+ServiceBinary=%13%\Cyclone2DpadFilter.sys
 
 [Strings]
 ProviderName="Local"
