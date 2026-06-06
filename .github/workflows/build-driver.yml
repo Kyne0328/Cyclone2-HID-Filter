@@ -82,7 +82,21 @@ jobs:
           call "%EWDK_DRIVE%:\BuildEnv\SetupBuildEnv.cmd"
           if errorlevel 1 ( echo SetupBuildEnv failed & exit /b 1 )
 
-          msbuild "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /v:minimal
+          rem The vcxproj uses WindowsTargetPlatformVersion=10.0, which normal VS
+          rem resolves to the full SDK version via the registry. The EWDK is not
+          rem registry-installed, so it stays literal "10.0" and the kernel-mode
+          rem include path (Include\<ver>\km, where ntddk.h lives) is wrong.
+          rem Pass the EWDK's real SDK version (Version_Number) explicitly.
+          echo Version_Number=%Version_Number%
+          set "WINSDKVER=%Version_Number%"
+          if not defined WINSDKVER (
+            echo Version_Number is not set; dumping candidate env vars:
+            set Version
+            set WindowsSDK
+            exit /b 1
+          )
+
+          msbuild "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /p:WindowsTargetPlatformVersion=%WINSDKVER% /v:minimal
           if errorlevel 1 ( echo msbuild failed & exit /b 1 )
 
           echo === Build output ===
