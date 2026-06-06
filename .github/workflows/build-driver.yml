@@ -77,7 +77,18 @@ jobs:
           rem does not accept a build command as an argument. Set up the env,
           rem then run msbuild as a separate command in the same cmd session.
           call "%EWDK_DRIVE%:\LaunchBuildEnv.cmd"
-          msbuild "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /v:minimal
+
+          rem The EWDK dev prompt does not put msbuild on PATH; resolve its full
+          rem path from the VS install it sets up, with a search fallback.
+          echo VSINSTALLDIR=%VSINSTALLDIR%
+          set "MSBUILD=%VSINSTALLDIR%MSBuild\Current\Bin\MSBuild.exe"
+          if not exist "%MSBUILD%" (
+            echo MSBuild not at expected path, searching under Program Files...
+            for /r "%EWDK_DRIVE%:\Program Files" %%f in (MSBuild.exe) do set "MSBUILD=%%f"
+          )
+          echo Using MSBUILD=%MSBUILD%
+
+          "%MSBUILD%" "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /v:minimal
           if errorlevel 1 (
             echo msbuild failed
             exit /b 1
