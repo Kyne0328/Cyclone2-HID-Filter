@@ -73,10 +73,13 @@ jobs:
 
           Write-Host "Installing $($wdkVsix.FullName) with $vsixInstaller"
           $p = Start-Process -FilePath $vsixInstaller -ArgumentList "/quiet", "/admin", $wdkVsix.FullName -Wait -PassThru
-          # 0 = installed, 1001 = already installed
-          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 1001) {
+          # 0 = installed, 1001 / 2001 = already installed (WDK setup may have
+          # integrated the extension into VS already). msbuild fails later if the
+          # KMDF toolset is genuinely missing, so benign "already installed" is ok.
+          if ($p.ExitCode -notin @(0, 1001, 2001)) {
             throw "VSIXInstaller exited with $($p.ExitCode)"
           }
+          Write-Host "VSIXInstaller exit code: $($p.ExitCode)"
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
