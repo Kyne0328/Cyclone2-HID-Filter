@@ -1,0 +1,69 @@
+name: Build Cyclone2DpadFilter
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "Cyclone2DpadFilter.*"
+      - ".github/workflows/build-driver.yml"
+
+jobs:
+  build:
+    name: Build ${{ matrix.configuration }} ${{ matrix.platform }}
+    runs-on: windows-2022
+
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration:
+          - Debug
+          - Release
+        platform:
+          - x64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Windows SDK and WDK
+        shell: pwsh
+        run: |
+          winget source update
+          winget install --id Microsoft.WindowsSDK.10.0.28000 --exact --silent --accept-package-agreements --accept-source-agreements
+          winget install --id Microsoft.WindowsWDK.10.0.28000 --exact --silent --accept-package-agreements --accept-source-agreements
+
+      - name: Install WDK Visual Studio extension
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $enginePath = & $vswhere -nologo -latest -products * -property enginePath
+          $vsixInstaller = Join-Path $enginePath "VSIXInstaller.exe"
+          $wdkVsix = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix" | Select-Object -First 1
+          if (-not $wdkVsix) {
+            throw "Could not find WDK.vsix after WDK install."
+          }
+          & $vsixInstaller /quiet $wdkVsix.FullName
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build driver
+        shell: pwsh
+        run: |
+          msbuild .\Cyclone2DpadFilter.vcxproj `
+            /t:Clean,Build `
+            /p:Configuration=${{ matrix.configuration }} `
+            /p:Platform=${{ matrix.platform }} `
+            /p:TargetVersion=Windows10
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cyclone2DpadFilter-${{ matrix.configuration }}-${{ matrix.platform }}
+          path: |
+            **\*.sys
+            **\*.inf
+            **\*.cat
+            **\*.pdb

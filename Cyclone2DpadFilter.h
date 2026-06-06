@@ -1,0 +1,26 @@
+#pragma once
+
+#include <ntddk.h>
+#include <wdf.h>
+#include <hidclass.h>
+
+#define CYCLONE_DEFAULT_REPORT_ID 0
+#define CYCLONE_DEFAULT_DPAD_BYTE_OFFSET 2
+#define CYCLONE_DEFAULT_DPAD_MASK 0x0F
+#define CYCLONE_DEFAULT_DPAD_NEUTRAL_VALUE 0x08
+
+typedef struct _DEVICE_CONTEXT {
+    ULONG ReportId;
+    ULONG DpadByteOffset;
+    UCHAR DpadMask;
+    UCHAR DpadNeutralValue;
+} DEVICE_CONTEXT, *PDEVICE_CONTEXT;
+
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, DeviceGetContext)
+
+DRIVER_INITIALIZE DriverEntry;
+EVT_WDF_DRIVER_DEVICE_ADD CycloneEvtDeviceAdd;
+EVT_WDF_IO_QUEUE_IO_READ CycloneEvtIoRead;
+EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL CycloneEvtIoDeviceControl;
+EVT_WDF_IO_QUEUE_IO_DEFAULT CycloneEvtIoDefault;
+EVT_WDF_REQUEST_COMPLETION_ROUTINE CycloneEvtReadComplete;

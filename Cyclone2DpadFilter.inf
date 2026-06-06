@@ -1,0 +1,60 @@
+[Version]
+Signature="$WINDOWS NT$"
+Class=HIDClass
+ClassGuid={745a17a0-74d3-11d0-b6fe-00a0c90f57da}
+Provider=%ProviderName%
+CatalogFile=Cyclone2DpadFilter.cat
+DriverVer=06/06/2026,0.1.0.0
+PnpLockdown=1
+
+[DestinationDirs]
+DefaultDestDir=12
+Cyclone2DpadFilter_CopyFiles=12
+
+[Manufacturer]
+%ManufacturerName%=Standard,NTamd64
+
+[Standard.NTamd64]
+; Replace this placeholder with the Cyclone 2 HID hardware ID from Device Manager.
+%Cyclone2DeviceDesc%=Cyclone2DpadFilter_Install,HID\VID_XXXX&PID_YYYY
+
+[Cyclone2DpadFilter_Install.NT]
+CopyFiles=Cyclone2DpadFilter_CopyFiles
+
+[Cyclone2DpadFilter_CopyFiles]
+Cyclone2DpadFilter.sys
+
+[Cyclone2DpadFilter_Install.NT.HW]
+AddReg=Cyclone2DpadFilter_AddReg,Cyclone2DpadFilter_Settings
+
+[Cyclone2DpadFilter_AddReg]
+HKR,,"UpperFilters",0x00010008,"Cyclone2DpadFilter"
+
+[Cyclone2DpadFilter_Settings]
+HKR,,"ReportId",0x00010001,0x00000000
+HKR,,"DpadByteOffset",0x00010001,0x00000002
+HKR,,"DpadMask",0x00010001,0x0000000F
+HKR,,"DpadNeutralValue",0x00010001,0x00000008
+
+[Cyclone2DpadFilter_Install.NT.Services]
+AddService=Cyclone2DpadFilter,,Cyclone2DpadFilter_Service
+
+[Cyclone2DpadFilter_Service]
+DisplayName=%ServiceName%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\Cyclone2DpadFilter.sys
+
+[SourceDisksNames]
+1=%DiskName%,,,
+
+[SourceDisksFiles]
+Cyclone2DpadFilter.sys=1
+
+[Strings]
+ProviderName="Local"
+ManufacturerName="GameSir Filter"
+Cyclone2DeviceDesc="GameSir Cyclone 2 D-pad Filter"
+ServiceName="Cyclone2DpadFilter"
+DiskName="Cyclone2DpadFilter Installation Disk"
