@@ -27,78 +27,33 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install Windows SDK and WDK
+      - name: Download and mount the EWDK
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $iso = "$env:RUNNER_TEMP\ewdk.iso"
 
-          function Install-FromFwLink {
-            param([string]$Name, [string]$Url, [string]$File)
-            Write-Host "Downloading $Name..."
-            Invoke-WebRequest -Uri $Url -OutFile $File -UseBasicParsing
-            Write-Host "Installing $Name..."
-            $p = Start-Process -FilePath $File -ArgumentList "/quiet", "/norestart" -Wait -PassThru
-            # 0 = success, 3010 = success but reboot required
-            if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
-              throw "$Name installer exited with $($p.ExitCode)"
-            }
+          # Windows 11 25H2 EWDK (build 26100) with Visual Studio Build Tools
+          # 17.14.0, which matches the windows-2022 runner. The EWDK is a
+          # self-contained ISO that ships the SDK, WDK, build tools, and the
+          # driver MSBuild targets, so no Visual Studio / WDK VSIX integration
+          # is required. fwlink from the EWDK download page.
+          Write-Host "Downloading EWDK ISO..."
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2335681" -OutFile $iso -UseBasicParsing
+
+          Write-Host "Mounting EWDK ISO..."
+          $mount = Mount-DiskImage -ImagePath $iso -PassThru
+          $drive = ($mount | Get-Volume).DriveLetter
+          if (-not $drive) {
+            throw "Failed to determine the EWDK mount drive letter."
           }
-
-          # SDK + WDK build 10.0.26100.6584 — the pair Microsoft documents for
-          # Visual Studio 2022 (the edition on the windows-2022 runner). The WDK
-          # VSIX in this build targets VS2022, so it integrates correctly. The
-          # "latest" WDK targets VS2026 and its VSIX won't apply to VS2022.
-          # SDK and WDK build numbers must match.
-          Install-FromFwLink "Windows 11 SDK 26100.6584" "https://go.microsoft.com/fwlink/?linkid=2338977" "winsdksetup.exe"
-          Install-FromFwLink "Windows 11 WDK 26100.6584" "https://go.microsoft.com/fwlink/?linkid=2335869" "wdksetup.exe"
-
-      - name: Install WDK Visual Studio extension
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installPath = & $vswhere -nologo -latest -products * -property installationPath
-          if (-not $installPath) {
-            throw "Could not locate Visual Studio installation via vswhere."
-          }
-
-          # VSIXInstaller.exe lives under the VS install, not the installer enginePath.
-          $vsixInstaller = Join-Path $installPath "Common7\IDE\VSIXInstaller.exe"
-          if (-not (Test-Path $vsixInstaller)) {
-            throw "VSIXInstaller.exe not found at $vsixInstaller"
-          }
-
-          $allVsix = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix"
-          # Prefer the VS2022 / amd64 extension to match the runner's VS edition.
-          $wdkVsix = $allVsix | Where-Object { $_.FullName -match 'VS2022' -and $_.FullName -match 'amd64' } | Select-Object -First 1
-          if (-not $wdkVsix) {
-            $wdkVsix = $allVsix | Select-Object -First 1
-          }
-          if (-not $wdkVsix) {
-            throw "Could not find WDK.vsix after WDK install."
-          }
-
-          Write-Host "Installing $($wdkVsix.FullName) with $vsixInstaller"
-          $p = Start-Process -FilePath $vsixInstaller -ArgumentList "/quiet", "/admin", $wdkVsix.FullName -Wait -PassThru
-          # 0 = installed, 1001 = already installed. 2001 means no applicable VS
-          # product (version mismatch) and is a real failure for this build.
-          if ($p.ExitCode -notin @(0, 1001)) {
-            throw "VSIXInstaller exited with $($p.ExitCode)"
-          }
-          Write-Host "VSIXInstaller exit code: $($p.ExitCode)"
-
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
+          "EWDK_DRIVE=$drive" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "EWDK mounted at ${drive}:"
 
       - name: Build driver
-        shell: pwsh
+        shell: cmd
         run: |
-          msbuild .\Cyclone2DpadFilter.vcxproj `
-            /t:Clean,Build `
-            /p:Configuration=${{ matrix.configuration }} `
-            /p:Platform=${{ matrix.platform }} `
-            /p:TargetVersion=Windows10
+          call %EWDK_DRIVE%:\LaunchBuildEnv.cmd msbuild "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }}
 
       - name: Upload build output
         uses: actions/upload-artifact@v4
