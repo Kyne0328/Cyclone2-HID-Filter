@@ -110,7 +110,11 @@ static VOID CycloneForwardWithCompletion(_In_ WDFDEVICE Device, _In_ WDFREQUEST 
     WDF_REQUEST_SEND_OPTIONS options;
     NTSTATUS status;
 
-    WdfRequestFormatRequestUsingCurrentType(Request);
+    status = WdfRequestFormatRequestUsingCurrentType(Request);
+    if (!NT_SUCCESS(status)) {
+        WdfRequestComplete(Request, status);
+        return;
+    }
 
     WdfRequestSetCompletionRoutine(Request, CycloneEvtReadComplete, Device);
 
@@ -128,7 +132,11 @@ static VOID CycloneForwardAndForget(_In_ WDFDEVICE Device, _In_ WDFREQUEST Reque
     WDF_REQUEST_SEND_OPTIONS options;
     NTSTATUS status;
 
-    WdfRequestFormatRequestUsingCurrentType(Request);
+    status = WdfRequestFormatRequestUsingCurrentType(Request);
+    if (!NT_SUCCESS(status)) {
+        WdfRequestComplete(Request, status);
+        return;
+    }
 
     WDF_REQUEST_SEND_OPTIONS_INIT(&options, WDF_REQUEST_SEND_OPTION_SEND_AND_FORGET);
 
@@ -164,6 +172,7 @@ NTSTATUS CycloneEvtDeviceAdd(
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queueConfig, WdfIoQueueDispatchParallel);
     queueConfig.EvtIoRead = CycloneEvtIoRead;
     queueConfig.EvtIoDeviceControl = CycloneEvtIoDeviceControl;
+    queueConfig.EvtIoInternalDeviceControl = CycloneEvtIoInternalDeviceControl;
     queueConfig.EvtIoDefault = CycloneEvtIoDefault;
 
     status = WdfIoQueueCreate(
@@ -205,6 +214,27 @@ VOID CycloneEvtIoDeviceControl(
     // IOCTL_HID_GET_INPUT_REPORT. Filter those reports too; forward the rest.
     //
     if (IoControlCode == IOCTL_HID_GET_INPUT_REPORT) {
+        CycloneForwardWithCompletion(device, Request);
+    } else {
+        CycloneForwardAndForget(device, Request);
+    }
+}
+
+VOID CycloneEvtIoInternalDeviceControl(
+    _In_ WDFQUEUE Queue,
+    _In_ WDFREQUEST Request,
+    _In_ size_t OutputBufferLength,
+    _In_ size_t InputBufferLength,
+    _In_ ULONG IoControlCode
+    )
+{
+    WDFDEVICE device = WdfIoQueueGetDevice(Queue);
+
+    UNREFERENCED_PARAMETER(OutputBufferLength);
+    UNREFERENCED_PARAMETER(InputBufferLength);
+
+    if (IoControlCode == IOCTL_HID_READ_REPORT ||
+        IoControlCode == IOCTL_HID_GET_INPUT_REPORT) {
         CycloneForwardWithCompletion(device, Request);
     } else {
         CycloneForwardAndForget(device, Request);
