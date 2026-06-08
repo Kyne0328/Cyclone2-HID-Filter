@@ -74,6 +74,11 @@ static VOID CycloneFilterDpadReport(
     // bytes to neutral. This proves whether this filter can modify the actual
     // report buffer that hidapi/GameSir Connect receives.
     //
+    DbgPrint("CycloneFilter: FILTER len=%Iu b11=%02X b12=%02X\n",
+             Length,
+             (Length > 11) ? Report[11] : 0xEE,
+             (Length > 12) ? Report[12] : 0xEE);
+
     if (Length > 11) {
         Report[11] = 0x00;
     }
@@ -202,6 +207,8 @@ NTSTATUS CycloneEvtDeviceAdd(
 
     CycloneLoadSettings(device);
 
+    DbgPrint("CycloneFilter: EvtDeviceAdd attached\n");
+
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queueConfig, WdfIoQueueDispatchParallel);
     queueConfig.EvtIoRead = CycloneEvtIoRead;
     queueConfig.EvtIoDeviceControl = CycloneEvtIoDeviceControl;
@@ -225,6 +232,8 @@ VOID CycloneEvtIoRead(
     )
 {
     UNREFERENCED_PARAMETER(Length);
+
+    DbgPrint("CycloneFilter: EvtIoRead len=%Iu\n", Length);
 
     CycloneForwardWithCompletion(WdfIoQueueGetDevice(Queue), Request);
 }
@@ -290,6 +299,9 @@ VOID CycloneEvtReadComplete(
     UNREFERENCED_PARAMETER(Target);
 
     status = Params->IoStatus.Status;
+
+    DbgPrint("CycloneFilter: ReadComplete status=%08X info=%Iu\n",
+             status, (size_t)Params->IoStatus.Information);
 
     if (NT_SUCCESS(status) && Params->IoStatus.Information > 0) {
         if (CycloneTryGetReportBuffer(Request, (size_t)Params->IoStatus.Information, &buffer, &length)) {
