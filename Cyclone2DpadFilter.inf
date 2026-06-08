@@ -37,7 +37,10 @@ CopyFiles=Cyclone2DpadFilter_CopyFiles
 Cyclone2DpadFilter.sys
 
 [Cyclone2DpadFilter_Install.NT.HW]
-AddReg=Cyclone2DpadFilter_Settings
+AddReg=Cyclone2DpadFilter_UpperFilter,Cyclone2DpadFilter_Settings
+
+[Cyclone2DpadFilter_UpperFilter]
+HKR,,"UpperFilters",0x00010008,"Cyclone2DpadFilter"
 
 [Cyclone2DpadFilter_Install.NT.Filters]
 AddFilter=Cyclone2DpadFilter,,Cyclone2DpadFilter_FilterInstall

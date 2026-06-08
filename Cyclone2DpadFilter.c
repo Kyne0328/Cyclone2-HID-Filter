@@ -86,6 +86,50 @@ static VOID CycloneFilterDpadReport(
         (Context->DpadNeutralValue & Context->DpadMask));
 }
 
+static BOOLEAN CycloneTryGetReportBuffer(
+    _In_ WDFREQUEST Request,
+    _In_ size_t BytesReturned,
+    _Outptr_result_bytebuffer_(*Length) PUCHAR *Buffer,
+    _Out_ size_t *Length
+    )
+{
+    PIRP irp;
+    NTSTATUS status;
+
+    *Buffer = NULL;
+    *Length = 0;
+
+    status = WdfRequestRetrieveOutputBuffer(Request, 1, (PVOID *)Buffer, Length);
+    if (NT_SUCCESS(status)) {
+        if (BytesReturned < *Length) {
+            *Length = BytesReturned;
+        }
+        return TRUE;
+    }
+
+    irp = WdfRequestWdmGetIrp(Request);
+    if (irp == NULL) {
+        return FALSE;
+    }
+
+    if (irp->MdlAddress != NULL) {
+        *Buffer = (PUCHAR)MmGetSystemAddressForMdlSafe(irp->MdlAddress, NormalPagePriority);
+    } else if (irp->AssociatedIrp.SystemBuffer != NULL) {
+        *Buffer = (PUCHAR)irp->AssociatedIrp.SystemBuffer;
+    } else if (irp->UserBuffer != NULL) {
+        *Buffer = (PUCHAR)irp->UserBuffer;
+    }
+
+    if (*Buffer == NULL || BytesReturned == 0) {
+        *Buffer = NULL;
+        *Length = 0;
+        return FALSE;
+    }
+
+    *Length = BytesReturned;
+    return TRUE;
+}
+
 NTSTATUS DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath
@@ -251,14 +295,12 @@ VOID CycloneEvtReadComplete(
     status = Params->IoStatus.Status;
 
     if (NT_SUCCESS(status) && Params->IoStatus.Information > 0) {
-        status = WdfRequestRetrieveOutputBuffer(Request, 1, (PVOID *)&buffer, &length);
-
-        if (NT_SUCCESS(status)) {
-            size_t bytesReturned = (size_t)Params->IoStatus.Information;
-            if (bytesReturned < length) {
-                length = bytesReturned;
-            }
+        if (CycloneTryGetReportBuffer(Request, (size_t)Params->IoStatus.Information, &buffer, &length)) {
+            __try {
             CycloneFilterDpadReport(deviceContext, buffer, length);
+            } __except(EXCEPTION_EXECUTE_HANDLER) {
+                ;
+            }
         }
 
         status = Params->IoStatus.Status;
