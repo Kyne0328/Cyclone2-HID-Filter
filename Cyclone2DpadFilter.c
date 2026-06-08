@@ -67,6 +67,9 @@ static VOID CycloneFilterDpadReport(
     _In_ size_t Length
     )
 {
+    ULONG offsets[2];
+    ULONG i;
+
     if (Context->DpadMask == 0) {
         return;
     }
@@ -81,9 +84,20 @@ static VOID CycloneFilterDpadReport(
         return;
     }
 
-    Report[Context->DpadByteOffset] = (UCHAR)(
-        (Report[Context->DpadByteOffset] & ~Context->DpadMask) |
-        (Context->DpadNeutralValue & Context->DpadMask));
+    offsets[0] = Context->DpadByteOffset;
+    offsets[1] = Context->DpadByteOffset + 1;
+
+    for (i = 0; i < RTL_NUMBER_OF(offsets); i++) {
+        ULONG offset = offsets[i];
+
+        if (offset >= Length) {
+            continue;
+        }
+
+        Report[offset] = (UCHAR)(
+            (Report[offset] & ~Context->DpadMask) |
+            (Context->DpadNeutralValue & Context->DpadMask));
+    }
 }
 
 static BOOLEAN CycloneTryGetReportBuffer(
