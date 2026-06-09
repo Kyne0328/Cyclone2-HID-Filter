@@ -8,7 +8,7 @@ ClassGuid={e2f84ce7-8efa-411c-aa69-97454ca4cb57}
 ExtensionId={2f8a1c6e-7b3d-4e92-a5f0-1d9c8b7a6e54}
 Provider=%ProviderName%
 CatalogFile=Cyclone2DpadFilter.cat
-DriverVer=06/06/2026,0.1.0.0
+DriverVer=06/09/2026,0.1.1.0
 PnpLockdown=1
 
 [Manufacturer]

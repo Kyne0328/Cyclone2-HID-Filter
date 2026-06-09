@@ -21,6 +21,24 @@ HID\VID_3537&PID_100B&IG_01
 
 This is the HID game-controller child device, not the USB composite/Xbox interface parent. The earlier `USB\VID_3537&PID_100B&MI_00` target installs on the XnaComposite/Xbox 360 interface and does not intercept the HID input report stream used by this filter.
 
+For the 2.4g dongle, do not assume this same HID ID is the game-facing device.
+The Cyclone 2 can expose different devices depending on connection type and
+input mode. In PC dongle mode it commonly presents an XInput/XUSB gamepad path
+for games, plus one or more HID paths for configuration/telemetry. Values
+captured from a HID logger can be correct while still not affecting the XInput
+controller used by the game.
+
+Run the inspection helper while connected through the dongle:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\windows\inspect-cyclone2-paths.ps1
+```
+
+If the game-facing device is Xbox/XInput/XUSB/XnaComposite, this HIDClass upper
+filter is the wrong interception point for games. Either switch the controller
+to a HID/DS4/NS mode and target that HID collection, or write a separate filter
+for the XInput/XUSB stack.
+
 ## Build
 
 Use the GitHub Actions workflow or build locally with Visual Studio + WDK/EWDK.
@@ -38,7 +56,7 @@ The workflow creates a temporary self-signed test code-signing certificate, sign
 
 ## D-pad report settings
 
-The current USB HID report values are:
+The current HID report values are:
 
 - `ReportId=0`
 - `DpadByteOffset=0x0B`
@@ -46,6 +64,15 @@ The current USB HID report values are:
 - `DpadNeutralValue=0x00`
 
 These were derived from reports where byte 11 changed between `00`, `04`, `0C`, `14`, and `1C` during D-pad presses.
+
+The driver now applies these settings directly:
+
+```text
+newByte = (oldByte & ~DpadMask) | (DpadNeutralValue & DpadMask)
+```
+
+So only the configured D-pad bits are neutralized; unrelated bits in the same
+byte are preserved.
 
 ## Install notes
 
@@ -73,7 +100,30 @@ Then install from an elevated Command Prompt in the artifact folder:
 pnputil /add-driver Cyclone2DpadFilter.inf /install
 ```
 
-Unplug and replug the controller, or disable and re-enable the HID-compliant game controller in Device Manager.
+Unplug and replug the controller, or disable and re-enable the targeted
+HID-compliant game controller in Device Manager.
+
+After install, verify that the filter is actually attached:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\windows\inspect-cyclone2-paths.ps1
+```
+
+The targeted HIDClass child should show `Cyclone2DpadFilter` in `UpperFilters`.
+If it does not, the INF did not match the connected dongle/mode device ID.
+
+For kernel debug confirmation, watch for these messages:
+
+```text
+CycloneFilter: EvtDeviceAdd attached
+CycloneFilter: ReadComplete ...
+CycloneFilter: dpad byte[...] ...
+```
+
+If `EvtDeviceAdd attached` appears but there are no read completions while a
+game reads input, the game is probably using a different device path. If the
+D-pad byte log appears but the game still sees D-pad input, the game is
+definitely not consuming this modified HID report.
 
 ## Uninstall
 

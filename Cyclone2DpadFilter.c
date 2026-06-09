@@ -67,24 +67,42 @@ static VOID CycloneFilterDpadReport(
     _In_ size_t Length
     )
 {
-    UNREFERENCED_PARAMETER(Context);
+    ULONG offset = Context->DpadByteOffset;
+    UCHAR before;
+    UCHAR after;
 
-    //
-    // Diagnostic build: ignore registry settings and force the observed D-pad
-    // bytes to neutral. This proves whether this filter can modify the actual
-    // report buffer that hidapi/GameSir Connect receives.
-    //
-    DbgPrint("CycloneFilter: FILTER len=%Iu b11=%02X b12=%02X\n",
-             Length,
-             (Length > 11) ? Report[11] : 0xEE,
-             (Length > 12) ? Report[12] : 0xEE);
-
-    if (Length > 11) {
-        Report[11] = 0x00;
+    if (Length == 0) {
+        return;
     }
 
-    if (Length > 12) {
-        Report[12] = 0x00;
+    if (Context->ReportId != 0 && Report[0] != (UCHAR)(Context->ReportId & 0xFF)) {
+        DbgPrint("CycloneFilter: skipped report id=%02X expected=%02X len=%Iu\n",
+                 Report[0],
+                 (UCHAR)(Context->ReportId & 0xFF),
+                 Length);
+        return;
+    }
+
+    if (offset >= Length) {
+        DbgPrint("CycloneFilter: skipped short report len=%Iu offset=%lu\n",
+                 Length,
+                 offset);
+        return;
+    }
+
+    before = Report[offset];
+    after = (UCHAR)((before & ~Context->DpadMask) |
+                    (Context->DpadNeutralValue & Context->DpadMask));
+
+    if (before != after) {
+        Report[offset] = after;
+        DbgPrint("CycloneFilter: dpad byte[%lu] %02X->%02X mask=%02X neutral=%02X len=%Iu\n",
+                 offset,
+                 before,
+                 after,
+                 Context->DpadMask,
+                 Context->DpadNeutralValue,
+                 Length);
     }
 }
 
