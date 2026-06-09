@@ -1,0 +1,12 @@
+EXPORTS
+    XInputGetState
+    XInputSetState
+    XInputGetCapabilities
+    XInputEnable
+    XInputGetBatteryInformation
+    XInputGetKeystroke
+    XInputGetAudioDeviceIds
+    XInputGetStateEx @100
+    XInputWaitForGuideButton @101
+    XInputCancelGuideButtonWait @102
+    XInputPowerOffController @103
