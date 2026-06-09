@@ -96,18 +96,6 @@ jobs:
           echo Using SIGNTOOL=%SIGNTOOL%
 
           rem ---------------------------------------------------------------
-          rem Build both drivers.
-          rem ---------------------------------------------------------------
-          msbuild "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /p:WindowsTargetPlatformVersion=%WINSDKVER% /p:SignMode=Off /p:EnableInf2Cat=false /v:minimal
-          if errorlevel 1 ( echo msbuild Cyclone2DpadFilter failed & exit /b 1 )
-
-          msbuild "%GITHUB_WORKSPACE%\Cyclone2UsbFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /p:WindowsTargetPlatformVersion=%WINSDKVER% /p:SignMode=Off /p:EnableInf2Cat=false /v:minimal
-          if errorlevel 1 ( echo msbuild Cyclone2UsbFilter failed & exit /b 1 )
-
-          echo === Build output tree ===
-          dir /s /b "%GITHUB_WORKSPACE%\x64" 2>nul
-
-          rem ---------------------------------------------------------------
           rem Create one shared test certificate for both packages.
           rem ---------------------------------------------------------------
           set "CERTFILE=%GITHUB_WORKSPACE%\Cyclone2-TestCert.cer"
@@ -119,9 +107,17 @@ jobs:
           if not defined CERT_THUMBPRINT ( echo certificate thumbprint missing & exit /b 1 )
 
           rem ---------------------------------------------------------------
-          rem Package, catalog, and sign Cyclone2DpadFilter (HID upper filter).
+          rem Build Cyclone2DpadFilter, package it, then build Cyclone2UsbFilter.
+          rem Both projects output to the same x64\Release directory. Building
+          rem the second with /t:Clean,Build would wipe the first driver's files,
+          rem so we copy the first package before the second Clean runs.
           rem ---------------------------------------------------------------
           set "OUT=%GITHUB_WORKSPACE%\x64\${{ matrix.configuration }}"
+
+          msbuild "%GITHUB_WORKSPACE%\Cyclone2DpadFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /p:WindowsTargetPlatformVersion=%WINSDKVER% /p:SignMode=Off /p:EnableInf2Cat=false /v:minimal
+          if errorlevel 1 ( echo msbuild Cyclone2DpadFilter failed & exit /b 1 )
+
+          rem Package DpadFilter immediately before UsbFilter Clean wipes the dir.
           set "PKG=%GITHUB_WORKSPACE%\package"
           if exist "%PKG%" rmdir /s /q "%PKG%"
           mkdir "%PKG%"
@@ -142,6 +138,16 @@ jobs:
 
           echo === Cyclone2DpadFilter package ===
           dir /b "%PKG%"
+
+          rem ---------------------------------------------------------------
+          rem Now build Cyclone2UsbFilter. Its Clean step wipes x64\Release,
+          rem but DpadFilter is already safely in the package dir above.
+          rem ---------------------------------------------------------------
+          msbuild "%GITHUB_WORKSPACE%\Cyclone2UsbFilter.vcxproj" /t:Clean,Build /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /p:WindowsTargetPlatformVersion=%WINSDKVER% /p:SignMode=Off /p:EnableInf2Cat=false /v:minimal
+          if errorlevel 1 ( echo msbuild Cyclone2UsbFilter failed & exit /b 1 )
+
+          echo === Build output tree ===
+          dir /s /b "%GITHUB_WORKSPACE%\x64" 2>nul
 
           rem ---------------------------------------------------------------
           rem Package, catalog, and sign Cyclone2UsbFilter (USB lower filter).
