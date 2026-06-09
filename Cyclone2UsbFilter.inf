@@ -16,7 +16,10 @@ PnpLockdown=1
 %ManufacturerName%=Standard,NTamd64.10.0...18362
 
 [Standard.NTamd64.10.0...18362]
-%Cyclone2UsbDesc%=Cyclone2UsbFilter_Install,USB\VID_3537&PID_100B
+; PID_100B = wired / original dongle firmware
+%Cyclone2UsbDesc_100B%=Cyclone2UsbFilter_Install,USB\VID_3537&PID_100B
+; PID_1053 = alternate dongle firmware / mode
+%Cyclone2UsbDesc_1053%=Cyclone2UsbFilter_Install,USB\VID_3537&PID_1053
 
 [SourceDisksNames]
 1=%DiskName%,,,
@@ -64,6 +67,7 @@ KmdfLibraryVersion=$KMDFVERSION$
 [Strings]
 ProviderName="Local"
 ManufacturerName="GameSir Filter"
-Cyclone2UsbDesc="GameSir Cyclone 2 USB D-pad Filter (composite parent)"
+Cyclone2UsbDesc_100B="GameSir Cyclone 2 USB D-pad Filter (PID_100B)"
+Cyclone2UsbDesc_1053="GameSir Cyclone 2 USB D-pad Filter (PID_1053)"
 ServiceName="Cyclone2UsbFilter"
 DiskName="Cyclone2UsbFilter Installation Disk"
