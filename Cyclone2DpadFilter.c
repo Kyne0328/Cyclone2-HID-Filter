@@ -115,9 +115,35 @@ static BOOLEAN CycloneTryGetReportBuffer(
 {
     PIRP irp;
     NTSTATUS status;
+    PHID_XFER_PACKET packet;
+    size_t packetLength;
 
     *Buffer = NULL;
     *Length = 0;
+
+    // HIDCLASS internal read requests commonly carry a HID_XFER_PACKET. In that path,
+    // the report bytes live at HID_XFER_PACKET.ReportBuffer, not in the WDF output buffer.
+    status = WdfRequestRetrieveInputBuffer(
+        Request,
+        sizeof(HID_XFER_PACKET),
+        (PVOID *)&packet,
+        &packetLength);
+
+    if (NT_SUCCESS(status) && packet != NULL && packetLength >= sizeof(HID_XFER_PACKET)) {
+        if (packet->reportBuffer != NULL && packet->reportBufferLen != 0) {
+            *Buffer = (PUCHAR)packet->reportBuffer;
+            *Length = packet->reportBufferLen;
+
+            if (CompletedLength != 0 && CompletedLength < *Length) {
+                *Length = CompletedLength;
+            }
+
+            KdPrint(("CycloneFilter: using HID_XFER_PACKET ReportBuffer len=%Iu completed=%Iu\n",
+                     *Length,
+                     CompletedLength));
+            return TRUE;
+        }
+    }
 
     status = WdfRequestRetrieveOutputBuffer(Request, 1, (PVOID *)Buffer, Length);
     if (NT_SUCCESS(status)) {
