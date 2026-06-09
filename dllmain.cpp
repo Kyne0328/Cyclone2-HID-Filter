@@ -12,6 +12,7 @@
 //
 
 #include <windows.h>
+#include <stdio.h>
 
 //
 // XInput types are defined locally rather than via <xinput.h>: that header
@@ -70,6 +71,40 @@ typedef struct _XINPUT_KEYSTROKE {
 // first use in GetRealModule().
 extern "C" IMAGE_DOS_HEADER __ImageBase;
 
+//
+// Diagnostic logging. Writes xinput_proxy_log.txt next to this DLL so we can
+// confirm whether the proxy is loaded and which exports GameSir Connect calls.
+// Set CYCLONE_PROXY_LOG to 0 to compile the logging out entirely.
+//
+#ifndef CYCLONE_PROXY_LOG
+#define CYCLONE_PROXY_LOG 1
+#endif
+
+#if CYCLONE_PROXY_LOG
+static void LogLine(const char* text)
+{
+    wchar_t path[MAX_PATH]{};
+    GetModuleFileNameW((HMODULE)&__ImageBase, path, MAX_PATH);
+
+    wchar_t* slash = wcsrchr(path, L'\\');
+    if (slash) {
+        *(slash + 1) = L'\0';
+        wcscat_s(path, L"xinput_proxy_log.txt");
+    }
+
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path, L"a") == 0 && f) {
+        fprintf(f, "%s\n", text);
+        fclose(f);
+    }
+}
+// Logs a message only on the first time control passes a given call site.
+#define LOG_ONCE(msg) do { static LONG _once = 0; \
+    if (InterlockedExchange(&_once, 1) == 0) LogLine(msg); } while (0)
+#else
+#define LOG_ONCE(msg) ((void)0)
+#endif
+
 static HMODULE g_real = nullptr;
 
 //
@@ -98,6 +133,9 @@ static HMODULE GetRealModule()
         if (prev != nullptr && prev != loaded) {
             FreeLibrary(loaded);
         }
+        LOG_ONCE("XInput1_4_real.dll loaded");
+    } else {
+        LOG_ONCE("FAILED to load XInput1_4_real.dll");
     }
 
     return g_real;
@@ -149,6 +187,8 @@ typedef DWORD (WINAPI *PFN_PowerOff)(DWORD);
 extern "C" __declspec(dllexport)
 DWORD WINAPI XInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
 {
+    LOG_ONCE("XInputGetState called");
+
     auto real = (PFN_GetState)RealProc("XInputGetState");
     if (!real) {
         return ERROR_DEVICE_NOT_CONNECTED;
@@ -157,6 +197,7 @@ DWORD WINAPI XInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
     DWORD result = real(dwUserIndex, pState);
     if (result == ERROR_SUCCESS) {
         StripDpad(pState);
+        LOG_ONCE("XInputGetState D-pad cleared");
     }
     return result;
 }
@@ -171,6 +212,7 @@ DWORD WINAPI XInputSetState(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
 extern "C" __declspec(dllexport)
 DWORD WINAPI XInputGetCapabilities(DWORD dwUserIndex, DWORD dwFlags, XINPUT_CAPABILITIES* pCapabilities)
 {
+    LOG_ONCE("XInputGetCapabilities called");
     auto real = (PFN_GetCapabilities)RealProc("XInputGetCapabilities");
     return real ? real(dwUserIndex, dwFlags, pCapabilities) : ERROR_DEVICE_NOT_CONNECTED;
 }
@@ -194,6 +236,7 @@ DWORD WINAPI XInputGetBatteryInformation(DWORD dwUserIndex, BYTE devType, XINPUT
 extern "C" __declspec(dllexport)
 DWORD WINAPI XInputGetKeystroke(DWORD dwUserIndex, DWORD dwReserved, PXINPUT_KEYSTROKE pKeystroke)
 {
+    LOG_ONCE("XInputGetKeystroke called");
     auto real = (PFN_GetKeystroke)RealProc("XInputGetKeystroke");
     return real ? real(dwUserIndex, dwReserved, pKeystroke) : ERROR_EMPTY;
 }
@@ -216,6 +259,8 @@ DWORD WINAPI XInputGetAudioDeviceIds(DWORD dwUserIndex, LPWSTR pRenderDeviceId, 
 extern "C" __declspec(dllexport)
 DWORD WINAPI XInputGetStateEx(DWORD dwUserIndex, XINPUT_STATE* pState)
 {
+    LOG_ONCE("XInputGetStateEx called");
+
     auto real = (PFN_GetState)RealProcOrdinal(100);
     if (!real) {
         return ERROR_DEVICE_NOT_CONNECTED;
@@ -224,6 +269,7 @@ DWORD WINAPI XInputGetStateEx(DWORD dwUserIndex, XINPUT_STATE* pState)
     DWORD result = real(dwUserIndex, pState);
     if (result == ERROR_SUCCESS) {
         StripDpad(pState);
+        LOG_ONCE("XInputGetStateEx D-pad cleared");
     }
     return result;
 }
@@ -251,7 +297,9 @@ DWORD WINAPI XInputPowerOffController(DWORD dwUserIndex)
 
 BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID)
 {
-    if (reason == DLL_PROCESS_DETACH && g_real) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        LOG_ONCE("=== XInput proxy DLL_PROCESS_ATTACH ===");
+    } else if (reason == DLL_PROCESS_DETACH && g_real) {
         FreeLibrary(g_real);
         g_real = nullptr;
     }
